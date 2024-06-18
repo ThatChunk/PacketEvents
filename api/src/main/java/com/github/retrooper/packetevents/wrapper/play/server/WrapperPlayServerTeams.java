@@ -253,6 +253,7 @@ public class WrapperPlayServerTeams extends PacketWrapper<WrapperPlayServerTeams
             } else {
                 writeVarInt(players.size());
             }
+
             for (String playerName : players) {
                 writeString(playerName, 40);
             }

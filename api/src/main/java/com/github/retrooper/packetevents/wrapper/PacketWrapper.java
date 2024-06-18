@@ -638,10 +638,14 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
     }
 
     public void writeComponent(Component component) {
+        this.writeComponent(component, false);
+    }
+
+    public void writeComponent(Component component, boolean legacy) {
         if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_3)) {
             this.writeComponentAsNBT(component);
         } else {
-            this.writeComponentAsJSON(component);
+            this.writeComponentAsJSON(component, legacy);
         }
     }
 
@@ -650,7 +654,11 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
     }
 
     public void writeComponentAsJSON(Component component) {
-        String jsonString = AdventureSerializer.asVanilla(component);
+        this.writeComponentAsJSON(component, false);
+    }
+
+    public void writeComponentAsJSON(Component component, boolean legacy) {
+        String jsonString = legacy ? AdventureSerializer.asVanilla(component) : AdventureSerializer.toJson(component);
         this.writeString(jsonString, this.getMaxMessageLength());
     }
 

@@ -101,7 +101,7 @@ public class WrapperPlayServerScoreboardObjective extends PacketWrapper<WrapperP
                     writeString(RenderType.INTEGER.name().toLowerCase());
                 }
             } else {
-                writeComponent(displayName);
+                writeComponent(displayName, true);
                 if (renderType != null) {
                     writeVarInt(renderType.ordinal());
                 } else {
