@@ -650,7 +650,7 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
     }
 
     public void writeComponentAsJSON(Component component) {
-        String jsonString = AdventureSerializer.toJson(component);
+        String jsonString = AdventureSerializer.asVanilla(component);
         this.writeString(jsonString, this.getMaxMessageLength());
     }
 
