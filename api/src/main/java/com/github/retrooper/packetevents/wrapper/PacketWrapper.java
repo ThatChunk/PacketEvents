@@ -33,6 +33,7 @@ import com.github.retrooper.packetevents.protocol.chat.LastSeenMessages;
 import com.github.retrooper.packetevents.protocol.chat.MessageSignature;
 import com.github.retrooper.packetevents.protocol.chat.Node;
 import com.github.retrooper.packetevents.protocol.chat.Parsers;
+import com.github.retrooper.packetevents.protocol.chat.Parsers.Parser;
 import com.github.retrooper.packetevents.protocol.chat.RemoteChatSession;
 import com.github.retrooper.packetevents.protocol.chat.SignedCommandArgument;
 import com.github.retrooper.packetevents.protocol.chat.filter.FilterMask;
@@ -266,6 +267,9 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
         return buffer;
     }
 
+    public void setBuffer(Object buffer) {
+        this.buffer = buffer;
+    }
 
     /**
      * Gets the Packet ID for the current platform version
@@ -1243,18 +1247,23 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
         writeInt(data.getDemand());
     }
 
-    public ChatMessage_v1_19_1.ChatTypeBoundNetwork readChatTypeBoundNetwork() {
-        int id = readVarInt();
-        ChatType type = ChatTypes.getById(getServerVersion().toClientVersion(), id);
+    public ChatType.Bound readChatTypeBoundNetwork() {
+        ChatType type = this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_21)
+                ? this.readMappedEntityOrDirect(ChatTypes::getById, ChatType::readDirect)
+                : this.readMappedEntity(ChatTypes::getById);
         Component name = readComponent();
         Component targetName = readOptional(PacketWrapper::readComponent);
-        return new ChatMessage_v1_19_1.ChatTypeBoundNetwork(type, name, targetName);
+        return new ChatType.Bound(type, name, targetName);
     }
 
-    public void writeChatTypeBoundNetwork(ChatMessage_v1_19_1.ChatTypeBoundNetwork chatType) {
-        writeVarInt(chatType.getType().getId(getServerVersion().toClientVersion()));
-        writeComponent(chatType.getName());
-        writeOptional(chatType.getTargetName(), PacketWrapper::writeComponent);
+    public void writeChatTypeBoundNetwork(ChatType.Bound chatFormatting) {
+        if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_21)) {
+            this.writeMappedEntityOrDirect(chatFormatting.getType(), ChatType::writeDirect);
+        } else {
+            this.writeMappedEntity(chatFormatting.getType());
+        }
+        writeComponent(chatFormatting.getName());
+        writeOptional(chatFormatting.getTargetName(), PacketWrapper::writeComponent);
     }
 
     public Node readNode() {
@@ -1265,16 +1274,18 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
 
         int redirectNodeIndex = ((flags & 0x08) != 0) ? readVarInt() : 0;
         if (nodeType == 2) {
-            String name = readString();
-            int parserID = readVarInt();
-            List<Object> properties = Parsers.getById(this.serverVersion.toClientVersion(), parserID)
-                    .readProperties(this).orElse(null);
-            ResourceLocation suggestionType = ((flags & 0x10) != 0) ? readIdentifier() : null;
-            return new Node(flags, children, redirectNodeIndex, name, parserID, properties, suggestionType);
+            String name = this.readString();
+            Parser parser = this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19)
+                    ? this.readMappedEntity(Parsers::getById)
+                    : Parsers.getByName(this.readIdentifier().toString());
+            List<Object> properties = parser.readProperties(this).orElse(null);
+            ResourceLocation suggestionType = ((flags & 0x10) != 0) ? this.readIdentifier() : null;
+            return new Node(flags, children, redirectNodeIndex, name, parser, properties, suggestionType);
         } else if (nodeType == 1) {
-            return new Node(flags, children, redirectNodeIndex, readString(), null, null, null);
+            String name = this.readString();
+            return new Node(flags, children, redirectNodeIndex, name, (Parser) null, null, null);
         } else {
-            return new Node(flags, children, redirectNodeIndex, null, null, null, null);
+            return new Node(flags, children, redirectNodeIndex, null, (Parser) null, null, null);
         }
     }
 
@@ -1285,10 +1296,16 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
             writeVarInt(node.getRedirectNodeIndex());
         }
         node.getName().ifPresent(this::writeString);
-        node.getParserID().ifPresent(this::writeVarInt);
-        if (node.getProperties().isPresent()) {
-            Parsers.getById(this.serverVersion.toClientVersion(), node.getParserID().get())
-                    .writeProperties(this, node.getProperties().get());
+        if (node.getParser().isPresent()) {
+            Parser parser = node.getParser().get();
+            if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19)) {
+                this.writeMappedEntity(parser);
+            } else {
+                this.writeIdentifier(parser.getName());
+            }
+            if (node.getProperties().isPresent()) {
+                parser.writeProperties(this, node.getProperties().get());
+            }
         }
         node.getSuggestionsType().ifPresent(this::writeIdentifier);
     }

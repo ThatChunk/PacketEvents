@@ -46,9 +46,22 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.material.MaterialData;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.*;
-import java.lang.reflect.*;
-import java.util.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInput;
+import java.io.DataInputStream;
+import java.io.DataOutput;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -124,6 +137,9 @@ public final class SpigotReflectionUtil {
     private static Object DIMENSION_TYPE_REGISTRY_KEY;
 
     private static boolean PAPER_ENTITY_LOOKUP_EXISTS = false;
+    private static boolean PAPER_ENTITY_LOOKUP_LEGACY = false;
+
+    private static boolean IS_OBFUSCATED;
 
     //Cache entities right after we request/find them for faster search.
     public static Map<Integer, Entity> ENTITY_ID_CACHE = new MapMaker().weakValues().makeMap();
@@ -135,7 +151,8 @@ public final class SpigotReflectionUtil {
             NMS_PACKET_DATA_SERIALIZER_CONSTRUCTOR = NMS_PACKET_DATA_SERIALIZER_CLASS.getConstructor(BYTE_BUF_CLASS);
             // This constructor doesn't exist on 1.8 - when was it added?
             if (VERSION.isNewerThanOrEquals(ServerVersion.V_1_9)) {
-                NMS_MINECRAFT_KEY_CONSTRUCTOR = NMS_MINECRAFT_KEY_CLASS.getConstructor(String.class, String.class);
+                NMS_MINECRAFT_KEY_CONSTRUCTOR = NMS_MINECRAFT_KEY_CLASS.getDeclaredConstructor(String.class, String.class);
+                NMS_MINECRAFT_KEY_CONSTRUCTOR.setAccessible(true); // set to private since 1.21
             }
             if (VERSION.isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
                 REGISTRY_FRIENDLY_BYTE_BUF_CONSTRUCTOR = REGISTRY_FRIENDLY_BYTE_BUF.getConstructor(
@@ -281,9 +298,11 @@ public final class SpigotReflectionUtil {
         }
 
         PAPER_ENTITY_LOOKUP_EXISTS = Reflection.getField(WORLD_SERVER_CLASS, PAPER_ENTITY_LOOKUP_CLASS, 0) != null;
+        if (PAPER_ENTITY_LOOKUP_EXISTS) {
+            //It's not inside the Level class (NMS World) class, which is how it was on < 1.21 Paper
+            PAPER_ENTITY_LOOKUP_LEGACY = Reflection.getField(NMS_WORLD_CLASS, PAPER_ENTITY_LOOKUP_CLASS, 0) == null;
+        }
     }
-
-    private static boolean IS_OBFUSCATED;
 
     private static void initClasses() {
         // spigot / paper versions older than 1.20.5 use spigot mappings
@@ -314,7 +333,11 @@ public final class SpigotReflectionUtil {
         if (V_1_17_OR_HIGHER) {
             LEVEL_ENTITY_GETTER_CLASS = getServerClass("world.level.entity.LevelEntityGetter", "");
             PERSISTENT_ENTITY_SECTION_MANAGER_CLASS = getServerClass("world.level.entity.PersistentEntitySectionManager", "");
-            PAPER_ENTITY_LOOKUP_CLASS = Reflection.getClassByNameWithoutException("io.papermc.paper.chunk.system.entity.EntityLookup");
+            PAPER_ENTITY_LOOKUP_CLASS = Reflection.getClassByNameWithoutException("ca.spottedleaf.moonrise.patches.chunk_system.level.entity.EntityLookup");
+            if (PAPER_ENTITY_LOOKUP_CLASS == null) {
+                //Older than 1.21 names this differently
+                PAPER_ENTITY_LOOKUP_CLASS = Reflection.getClassByNameWithoutException("io.papermc.paper.chunk.system.entity.EntityLookup");
+            }
         }
         DIMENSION_MANAGER_CLASS = getServerClass(IS_OBFUSCATED ? "world.level.dimension.DimensionManager" : "world.level.dimension.DimensionType", "DimensionManager");
         MOJANG_CODEC_CLASS = Reflection.getClassByNameWithoutException("com.mojang.serialization.Codec");
@@ -1019,6 +1042,10 @@ public final class SpigotReflectionUtil {
                 ReflectionObject reflectWorldServer = new ReflectionObject(worldServer);
                 Object levelEntityGetter;
                 if (PAPER_ENTITY_LOOKUP_EXISTS) {
+                    if (!PAPER_ENTITY_LOOKUP_LEGACY) {
+                        //Check in the correct class!
+                        reflectWorldServer = new ReflectionObject(worldServer, NMS_WORLD_CLASS);
+                    }
                     levelEntityGetter = reflectWorldServer.readObject(0, PAPER_ENTITY_LOOKUP_CLASS);
                 } else {
                     Object entitySectionManager = reflectWorldServer.readObject(0, PERSISTENT_ENTITY_SECTION_MANAGER_CLASS);
@@ -1080,6 +1107,10 @@ public final class SpigotReflectionUtil {
             ReflectionObject wrappedWorldServer = new ReflectionObject(worldServer);
             Object levelEntityGetter;
             if (PAPER_ENTITY_LOOKUP_EXISTS) {
+                if (!PAPER_ENTITY_LOOKUP_LEGACY) {
+                    //Check in the correct class!
+                    wrappedWorldServer = new ReflectionObject(worldServer, NMS_WORLD_CLASS);
+                }
                 levelEntityGetter = wrappedWorldServer.readObject(0, PAPER_ENTITY_LOOKUP_CLASS);
             } else {
                 Object persistentEntitySectionManager = wrappedWorldServer.readObject(0, PERSISTENT_ENTITY_SECTION_MANAGER_CLASS);
