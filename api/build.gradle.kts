@@ -7,6 +7,7 @@ plugins {
     packetevents.`shadow-conventions`
     packetevents.`library-conventions`
     `mapping-compression`
+    `pe-version`
 }
 
 // papermc repo + disableAutoTargetJvm needed for mockbukkit
@@ -95,11 +96,24 @@ tasks {
         options {
             (this as CoreJavadocOptions).addBooleanOption("Xdoclint:none", true)
         }
+        mustRunAfter(generateVersionsFile)
+    }
+
+    sourcesJar {
+        mustRunAfter(generateVersionsFile)
+    }
+
+    withType<JavaCompile> {
+        dependsOn(generateVersionsFile)
     }
 
     processResources {
         dependsOn(compressMappings)
         from(project.layout.buildDirectory.dir("mappings/generated").get())
+    }
+
+    generateVersionsFile {
+        packageName = "com.github.retrooper.packetevents.util"
     }
 
     test {
