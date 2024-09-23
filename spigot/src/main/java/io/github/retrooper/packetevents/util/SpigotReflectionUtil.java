@@ -44,6 +44,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.material.MaterialData;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
@@ -799,27 +800,33 @@ public final class SpigotReflectionUtil {
 
     public static com.github.retrooper.packetevents.protocol.item.ItemStack decodeBukkitItemStack(ItemStack in) {
         Object buffer = PooledByteBufAllocator.DEFAULT.buffer();
-        //3 reflection calls
-        Object packetDataSerializer = createPacketDataSerializer(buffer);
-        Object nmsItemStack = toNMSItemStack(in);
-        writeNMSItemStackPacketDataSerializer(packetDataSerializer, nmsItemStack);
-        //No more reflection from here on.
-        PacketWrapper<?> wrapper = PacketWrapper.createUniversalPacketWrapper(buffer);
-        com.github.retrooper.packetevents.protocol.item.ItemStack stack = wrapper.readItemStack();
-        ByteBufHelper.release(buffer);
-        return stack;
+        try {
+            // 3 reflection calls
+            Object packetDataSerializer = createPacketDataSerializer(buffer);
+            Object nmsItemStack = toNMSItemStack(in);
+            writeNMSItemStackPacketDataSerializer(packetDataSerializer, nmsItemStack);
+            // No more reflection from here on.
+            PacketWrapper<?> wrapper = PacketWrapper.createUniversalPacketWrapper(buffer);
+            com.github.retrooper.packetevents.protocol.item.ItemStack stack = wrapper.readItemStack();
+            return stack;
+        } finally {
+            ByteBufHelper.release(buffer);
+        }
     }
 
     public static ItemStack encodeBukkitItemStack(com.github.retrooper.packetevents.protocol.item.ItemStack in) {
         Object buffer = PooledByteBufAllocator.DEFAULT.buffer();
-        PacketWrapper<?> wrapper = PacketWrapper.createUniversalPacketWrapper(buffer);
-        wrapper.writeItemStack(in);
-        //3 reflection calls
-        Object packetDataSerializer = createPacketDataSerializer(wrapper.getBuffer());
-        Object nmsItemStack = readNMSItemStackPacketDataSerializer(packetDataSerializer);
-        ItemStack stack = toBukkitItemStack(nmsItemStack);
-        ByteBufHelper.release(buffer);
-        return stack;
+        try {
+            PacketWrapper<?> wrapper = PacketWrapper.createUniversalPacketWrapper(buffer);
+            wrapper.writeItemStack(in);
+            // 3 reflection calls
+            Object packetDataSerializer = createPacketDataSerializer(wrapper.getBuffer());
+            Object nmsItemStack = readNMSItemStackPacketDataSerializer(packetDataSerializer);
+            ItemStack stack = toBukkitItemStack(nmsItemStack);
+            return stack;
+        } finally {
+            ByteBufHelper.release(buffer);
+        }
     }
 
     public static int getBlockDataCombinedId(MaterialData materialData) {
@@ -1062,7 +1069,7 @@ public final class SpigotReflectionUtil {
     }
 
     @Nullable
-    @Deprecated
+    @ApiStatus.Internal
     /**
      * Get the entity by the id.
      * @deprecated Please resort to {@link SpigotConversionUtil#getEntityById(World, int)} since the reflection util is not API.

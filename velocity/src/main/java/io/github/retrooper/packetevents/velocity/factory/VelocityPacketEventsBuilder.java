@@ -29,6 +29,7 @@ import com.github.retrooper.packetevents.manager.server.ServerManager;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.netty.NettyManager;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.settings.PacketEventsSettings;
 import com.github.retrooper.packetevents.util.LogManager;
@@ -37,6 +38,7 @@ import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.plugin.PluginContainer;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.ServerConnection;
 import io.github.retrooper.packetevents.bstats.Metrics;
 import io.github.retrooper.packetevents.impl.netty.NettyManagerImpl;
 import io.github.retrooper.packetevents.impl.netty.manager.player.PlayerManagerAbstract;
@@ -48,7 +50,9 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
+import java.lang.reflect.Field;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.logging.Level;
 
 public class VelocityPacketEventsBuilder {
@@ -66,7 +70,7 @@ public class VelocityPacketEventsBuilder {
     }
 
     public static PacketEventsAPI<PluginContainer> build(ProxyServer server, PluginContainer plugin, Logger logger, Path dataDirectory,
-            PacketEventsSettings settings) {
+                                                         PacketEventsSettings settings) {
         if (INSTANCE == null) {
             INSTANCE = buildNoCache(server, plugin, logger, dataDirectory, settings);
         }
@@ -78,7 +82,7 @@ public class VelocityPacketEventsBuilder {
     }
 
     public static PacketEventsAPI<PluginContainer> buildNoCache(ProxyServer server, PluginContainer plugin, Logger logger, Path dataDirectory,
-            PacketEventsSettings inSettings) {
+                                                                PacketEventsSettings inSettings) {
         return new PacketEventsAPI<PluginContainer>() {
             private final PacketEventsSettings settings = inSettings;
             // TODO Implement platform version
@@ -89,7 +93,22 @@ public class VelocityPacketEventsBuilder {
                 }
             };
             private final ServerManager serverManager = new ServerManagerAbstract() {
+
+                private final Field connectionInFlight, registeredServer;
                 private ServerVersion version;
+
+                {
+                    try {
+                        Class<?> playerClass = Class.forName("com.velocitypowered.proxy.connection.client.ConnectedPlayer");
+                        this.connectionInFlight = playerClass.getDeclaredField("connectionInFlight");
+                        this.connectionInFlight.setAccessible(true);
+                        Class<?> serverConnectionClass = Class.forName("com.velocitypowered.proxy.connection.backend.VelocityServerConnection");
+                        this.registeredServer = serverConnectionClass.getDeclaredField("registeredServer");
+                        this.registeredServer.setAccessible(true);
+                    } catch (ReflectiveOperationException exception) {
+                        throw new RuntimeException("Error while resolving methods for getting player server connection");
+                    }
+                }
 
                 @Override
                 public ServerVersion getVersion() {
@@ -112,6 +131,24 @@ public class VelocityPacketEventsBuilder {
                     }
                     return this.version;
                 }
+
+                private Object getTargetServer(Player player) {
+                    ServerConnection server = player.getCurrentServer().orElse(null);
+                    if (server != null) {
+                        return server;
+                    }
+                    try {
+                        return this.registeredServer.get(this.connectionInFlight.get(player));
+                    } catch (IllegalAccessException exception) {
+                        throw new RuntimeException(exception);
+                    }
+                }
+
+                @Override
+                public Object getRegistryCacheKey(User user, ClientVersion version) {
+                    Player player = server.getPlayer(user.getUUID()).orElse(null);
+                    return player == null ? null : Objects.hash(this.getTargetServer(player), version);
+                }
             };
 
             private final PlayerManagerAbstract playerManager = new PlayerManagerImpl();
@@ -126,6 +163,7 @@ public class VelocityPacketEventsBuilder {
             };
             private boolean loaded;
             private boolean initialized;
+            private boolean terminated;
 
             @Override
             public void load() {
@@ -162,6 +200,10 @@ public class VelocityPacketEventsBuilder {
                             (event) -> {
                                 Player player = event.getPlayer();
                                 Object channel = PacketEvents.getAPI().getPlayerManager().getChannel(player);
+                                // This only happens if a player is a fake player
+                                if(channel == null) {
+                                    return;
+                                }
                                 PacketEvents.getAPI().getInjector().setPlayer(channel, player);
 
                                 User user = PacketEvents.getAPI().getPlayerManager().getUser(player);
@@ -178,9 +220,10 @@ public class VelocityPacketEventsBuilder {
                     Object instance = plugin.getInstance().orElse(null);
                     if (instance != null) {
                         Metrics metrics = Metrics.createInstance(plugin, server, logger, dataDirectory, 11327);
+
                         //Just to have an idea of which versions of packetevents people use
                         metrics.addCustomChart(new Metrics.SimplePie("packetevents_version", () -> {
-                            return getVersion().toString();
+                            return getVersion().toStringWithoutSnapshot();
                         }));
                     }
 
@@ -203,7 +246,13 @@ public class VelocityPacketEventsBuilder {
                     // Unregister all our listeners
                     getEventManager().unregisterAllListeners();
                     initialized = false;
+                    terminated = true;
                 }
+            }
+
+            @Override
+            public boolean isTerminated() {
+                return terminated;
             }
 
             @Override

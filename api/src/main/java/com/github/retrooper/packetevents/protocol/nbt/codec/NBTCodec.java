@@ -150,7 +150,11 @@ public class NBTCodec {
     //PacketEvents end
 
     public static NBT readNBTFromBuffer(Object byteBuf, ServerVersion serverVersion) {
-        NBTLimiter limiter = new NBTLimiter(byteBuf);
+        NBTLimiter limiter = NBTLimiter.forBuffer(byteBuf);
+        return readNBTFromBuffer(byteBuf, serverVersion, limiter);
+    }
+
+    public static NBT readNBTFromBuffer(Object byteBuf, ServerVersion serverVersion, NBTLimiter limiter) {
         if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_8)) {
             try {
                 final boolean named = serverVersion.isOlderThan(ServerVersion.V_1_20_2);

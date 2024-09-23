@@ -87,6 +87,7 @@ public class SpigotPacketEventsBuilder {
             private boolean loaded;
             private boolean initialized;
             private boolean lateBind = false;
+            private boolean terminated = false;
 
             @Override
             public void load() {
@@ -142,8 +143,7 @@ public class SpigotPacketEventsBuilder {
 
                     Metrics metrics = new Metrics((JavaPlugin) plugin, 11327);
                     //Just to have an idea of which versions of packetevents people use
-                    metrics.addCustomChart(new Metrics.SimplePie("packetevents_version", () -> getVersion().toString()));
-
+                    metrics.addCustomChart(new Metrics.SimplePie("packetevents_version", () -> getVersion().toStringWithoutSnapshot()));
                     Bukkit.getPluginManager().registerEvents(new InternalBukkitListener(plugin), plugin);
 
                     if (lateBind) {
@@ -222,7 +222,13 @@ public class SpigotPacketEventsBuilder {
                     //Unregister all listeners. Because if we attempt to reload, we will end up with duplicate listeners.
                     getEventManager().unregisterAllListeners();
                     initialized = false;
+                    terminated = true;
                 }
+            }
+
+            @Override
+            public boolean isTerminated() {
+                return terminated;
             }
 
             @Override

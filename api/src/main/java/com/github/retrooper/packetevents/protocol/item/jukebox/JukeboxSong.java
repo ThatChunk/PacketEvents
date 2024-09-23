@@ -18,77 +18,93 @@
 
 package com.github.retrooper.packetevents.protocol.item.jukebox;
 
+import com.github.retrooper.packetevents.protocol.mapper.AbstractMappedEntity;
 import com.github.retrooper.packetevents.protocol.sound.Sound;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilderData;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
 import net.kyori.adventure.text.Component;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
-public class JukeboxSong {
-
+public class JukeboxSong extends AbstractMappedEntity implements IJukeboxSong {
     private Sound sound;
     private Component description;
     private float lengthInSeconds;
     private int comparatorOutput;
 
     public JukeboxSong(Sound sound, Component description, float lengthInSeconds, int comparatorOutput) {
+        this(null, sound, description, lengthInSeconds, comparatorOutput);
+    }
+
+    public JukeboxSong(@Nullable TypesBuilderData data, Sound sound, Component description, float lengthInSeconds,
+                       int comparatorOutput) {
+        super(data);
         this.sound = sound;
         this.description = description;
         this.lengthInSeconds = lengthInSeconds;
         this.comparatorOutput = comparatorOutput;
     }
 
+    @Deprecated
     public static JukeboxSong read(PacketWrapper<?> wrapper) {
-        Sound sound = Sound.read(wrapper);
-        Component description = wrapper.readComponent();
-        float lengthInSeconds = wrapper.readFloat();
-        int comparatorOutput = wrapper.readVarInt();
-        return new JukeboxSong(sound, description, lengthInSeconds, comparatorOutput);
+        return (JukeboxSong) IJukeboxSong.read(wrapper);
     }
 
+    @Deprecated
     public static void write(PacketWrapper<?> wrapper, JukeboxSong song) {
-        Sound.write(wrapper, song.sound);
-        wrapper.writeComponent(song.description);
-        wrapper.writeFloat(song.lengthInSeconds);
-        wrapper.writeVarInt(song.comparatorOutput);
+        IJukeboxSong.write(wrapper, song);
     }
 
+    @Override
+    public IJukeboxSong copy(@Nullable TypesBuilderData newData) {
+        return new JukeboxSong(newData, sound, description, lengthInSeconds, comparatorOutput);
+    }
+
+    @Override
     public Sound getSound() {
         return this.sound;
     }
 
+    @Deprecated
     public void setSound(Sound sound) {
         this.sound = sound;
     }
 
+    @Override
     public Component getDescription() {
         return this.description;
     }
 
+    @Deprecated
     public void setDescription(Component description) {
         this.description = description;
     }
 
+    @Override
     public float getLengthInSeconds() {
         return this.lengthInSeconds;
     }
 
+    @Deprecated
     public void setLengthInSeconds(float lengthInSeconds) {
         this.lengthInSeconds = lengthInSeconds;
     }
 
+    @Override
     public int getComparatorOutput() {
         return this.comparatorOutput;
     }
 
+    @Deprecated
     public void setComparatorOutput(int comparatorOutput) {
         this.comparatorOutput = comparatorOutput;
     }
 
-    @Override
-    public boolean equals(Object obj) {
+    public boolean deepEquals(Object obj) {
         if (this == obj) return true;
         if (!(obj instanceof JukeboxSong)) return false;
+        if (!super.equals(obj)) return false;
         JukeboxSong that = (JukeboxSong) obj;
         if (Float.compare(that.lengthInSeconds, this.lengthInSeconds) != 0) return false;
         if (this.comparatorOutput != that.comparatorOutput) return false;
@@ -96,8 +112,12 @@ public class JukeboxSong {
         return this.description.equals(that.description);
     }
 
+    public int deepHashCode() {
+        return Objects.hash(super.hashCode(), this.sound, this.description, this.lengthInSeconds, this.comparatorOutput);
+    }
+
     @Override
-    public int hashCode() {
-        return Objects.hash(this.sound, this.description, this.lengthInSeconds, this.comparatorOutput);
+    public String toString() {
+        return "JukeboxSong{sound=" + this.sound + ", description=" + this.description + ", lengthInSeconds=" + this.lengthInSeconds + ", comparatorOutput=" + this.comparatorOutput + '}';
     }
 }

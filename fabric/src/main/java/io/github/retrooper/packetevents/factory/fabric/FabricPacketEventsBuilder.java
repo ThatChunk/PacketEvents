@@ -13,9 +13,11 @@ import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.netty.NettyManager;
 import com.github.retrooper.packetevents.protocol.ProtocolVersion;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.settings.PacketEventsSettings;
 import com.github.retrooper.packetevents.util.LogManager;
+import com.github.retrooper.packetevents.util.mappings.GlobalRegistryHolder;
 import com.github.retrooper.packetevents.util.reflection.ReflectionObject;
 import io.github.retrooper.packetevents.handler.PacketDecoder;
 import io.github.retrooper.packetevents.handler.PacketEncoder;
@@ -87,6 +89,11 @@ public class FabricPacketEventsBuilder {
                         }
                     }
                     return VERSION;
+                }
+
+                @Override
+                public Object getRegistryCacheKey(User user, ClientVersion version) {
+                    return GlobalRegistryHolder.getGlobalRegistryCacheKey(user, version);
                 }
             };
 
@@ -161,6 +168,7 @@ public class FabricPacketEventsBuilder {
             };
             private boolean loaded;
             private boolean initialized;
+            private boolean terminated;
 
             @Override
             public void load() {
@@ -228,7 +236,13 @@ public class FabricPacketEventsBuilder {
                     //Unregister all our listeners
                     getEventManager().unregisterAllListeners();
                     initialized = false;
+                    terminated = true;
                 }
+            }
+
+            @Override
+            public boolean isTerminated() {
+                return terminated;
             }
 
             @Override

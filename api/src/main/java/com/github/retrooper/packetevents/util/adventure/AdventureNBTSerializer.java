@@ -33,6 +33,7 @@ import com.github.retrooper.packetevents.protocol.nbt.NBTNumber;
 import com.github.retrooper.packetevents.protocol.nbt.NBTShort;
 import com.github.retrooper.packetevents.protocol.nbt.NBTString;
 import com.github.retrooper.packetevents.protocol.nbt.NBTType;
+import com.github.retrooper.packetevents.util.UniqueIdUtil;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.nbt.api.BinaryTagHolder;
 import net.kyori.adventure.text.BlockNBTComponent;
@@ -66,9 +67,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
+
+import static com.github.retrooper.packetevents.util.adventure.AdventureIndexUtil.indexValueOrThrow;
 
 public class AdventureNBTSerializer implements ComponentSerializer<Component, Component, NBT> {
 
@@ -163,14 +165,17 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
         if (text != null) {
             builder = Component.text().content(text);
         } else if (translate != null) {
+            TranslatableComponent.Builder i18nBuilder;
+            builder = i18nBuilder = Component.translatable().key(translate);
             if (translateWith != null) {
                 if (BackwardCompatUtil.IS_4_15_0_OR_NEWER) {
-                    builder = Component.translatable().key(translate).fallback(translateFallback).arguments(translateWith);
+                    i18nBuilder.arguments(translateWith);
                 } else {
-                    builder = Component.translatable().key(translate).fallback(translateFallback).args(translateWith);
+                    i18nBuilder.args(translateWith);
                 }
-            } else {
-                builder = Component.translatable().key(translate).fallback(translateFallback);
+            }
+            if (BackwardCompatUtil.IS_4_13_0_OR_NEWER) {
+                i18nBuilder.fallback(translateFallback);
             }
         } else if (score != null) {
             builder = Component.score()
@@ -230,9 +235,11 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
             writer.writeUTF("translate", ((TranslatableComponent) component).key());
 
             // translation fallback
-            String fallback = ((TranslatableComponent) component).fallback();
-            if (fallback != null) {
-                writer.writeUTF("fallback", fallback);
+            if (BackwardCompatUtil.IS_4_13_0_OR_NEWER) {
+                String fallback = ((TranslatableComponent) component).fallback();
+                if (fallback != null) {
+                    writer.writeUTF("fallback", fallback);
+                }
             }
 
             // translation arguments
@@ -322,8 +329,10 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
             if (color != null) style.color(color);
         });
 
-        for (Map.Entry<TextDecoration, String> decoration : TextDecoration.NAMES.valueToKey().entrySet()) {
-            reader.useBoolean(decoration.getValue(), value -> style.decoration(decoration.getKey(), TextDecoration.State.byBoolean(value)));
+        for (String decorationKey : TextDecoration.NAMES.keys()) {
+            reader.useBoolean(decorationKey, value -> style.decoration(
+                    indexValueOrThrow(TextDecoration.NAMES, decorationKey),
+                    TextDecoration.State.byBoolean(value)));
         }
         reader.useUTF("insertion", style::insertion);
 
@@ -346,7 +355,7 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
                 } else {
                     NBTReader child = hoverEvent.child("contents");
                     Key itemId = child.readUTF("id", Key::key);
-                    Integer count = child.readInt("count", Function.identity());
+                    Integer count = child.readNumber("count", Number::intValue);
                     int nonNullCount = count == null ? 1 : count;
 
                     BinaryTagHolder tag = child.readUTF("tag", BinaryTagHolder::binaryTagHolder);
@@ -374,7 +383,7 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
                 NBTReader child = hoverEvent.child("contents");
                 style.hoverEvent(HoverEvent.showEntity(
                         child.readUTF("type", Key::key),
-                        child.readIntArray("id", this::deserializeUUID),
+                        child.readIntArray("id", UniqueIdUtil::fromIntArray),
                         child.read("name", this::deserialize)
                 ));
             }
@@ -394,10 +403,10 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
         TextColor color = style.color();
         if (color != null) writer.writeUTF("color", serializeColor(color));
 
-        for (Map.Entry<TextDecoration, String> decoration : TextDecoration.NAMES.valueToKey().entrySet()) {
-            TextDecoration.State state = style.decoration(decoration.getKey());
+        for (TextDecoration decoration : TextDecoration.NAMES.values()) {
+            TextDecoration.State state = style.decoration(decoration);
             if (state != TextDecoration.State.NOT_SET) {
-                writer.writeBoolean(decoration.getValue(), state == TextDecoration.State.TRUE);
+                writer.writeBoolean(decoration.toString(), state == TextDecoration.State.TRUE);
             }
         }
 
@@ -458,7 +467,7 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
                     HoverEvent.ShowEntity showEntity = (HoverEvent.ShowEntity) hoverEvent.value();
                     NBTWriter entity = child.child("contents");
                     entity.writeUTF("type", showEntity.type().asString());
-                    entity.writeIntArray("id", this.serializeUUID(showEntity.id()));
+                    entity.writeIntArray("id", UniqueIdUtil.toIntArray(showEntity.id()));
                     if (showEntity.name() != null) entity.write("name", this.serialize(showEntity.name()));
                     break;
                 }
@@ -493,27 +502,6 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
         } else {
             return String.format(Locale.ROOT, "%c%06X", TextColor.HEX_CHARACTER, value.value());
         }
-    }
-    // -------------------------------------------------
-
-    // ---------------------- UUID ----------------------
-    private @NotNull UUID deserializeUUID(int[] value) {
-        if (value.length != 4) {
-            throw new IllegalStateException("Invalid encoded uuid length: " + value.length + " != 4");
-        }
-        return new UUID(
-                (long) value[0] << 32 | (long) value[1] & 0xFFFFFFFFL,
-                (long) value[2] << 32 | (long) value[3] & 0xFFFFFFFFL
-        );
-    }
-
-    private int @NotNull [] serializeUUID(UUID value) {
-        return new int[]{
-                (int) (value.getMostSignificantBits() >> 32),
-                (int) value.getMostSignificantBits(),
-                (int) (value.getLeastSignificantBits() >> 32),
-                (int) value.getLeastSignificantBits()
-        };
     }
     // -------------------------------------------------
 
@@ -598,36 +586,24 @@ public class AdventureNBTSerializer implements ComponentSerializer<Component, Co
             return withTag(key, tag -> function.apply(requireType(tag, NBTType.SHORT).getAsShort()));
         }
 
-        public void useInt(String key, Consumer<Integer> consumer) {
-            useTag(key, tag -> consumer.accept(requireType(tag, NBTType.INT).getAsInt()));
+        public void useNumber(String key, Consumer<Number> consumer) {
+            useTag(key, tag -> {
+                if (tag instanceof NBTNumber) {
+                    consumer.accept(((NBTNumber) tag).getAsNumber());
+                } else {
+                    throw new IllegalArgumentException("Expected number but got " + tag.getType());
+                }
+            });
         }
 
-        public <R> R readInt(String key, Function<Integer, R> function) {
-            return withTag(key, tag -> function.apply(requireType(tag, NBTType.INT).getAsInt()));
-        }
-
-        public void useLong(String key, Consumer<Long> consumer) {
-            useTag(key, tag -> consumer.accept(requireType(tag, NBTType.LONG).getAsLong()));
-        }
-
-        public <R> R readLong(String key, Function<Long, R> function) {
-            return withTag(key, tag -> function.apply(requireType(tag, NBTType.LONG).getAsLong()));
-        }
-
-        public void useFloat(String key, Consumer<Float> consumer) {
-            useTag(key, tag -> consumer.accept(requireType(tag, NBTType.FLOAT).getAsFloat()));
-        }
-
-        public <R> R readFloat(String key, Function<Float, R> function) {
-            return withTag(key, tag -> function.apply(requireType(tag, NBTType.FLOAT).getAsFloat()));
-        }
-
-        public void useDouble(String key, Consumer<Double> consumer) {
-            useTag(key, tag -> consumer.accept(requireType(tag, NBTType.DOUBLE).getAsDouble()));
-        }
-
-        public <R> R readDouble(String key, Function<Double, R> function) {
-            return withTag(key, tag -> function.apply(requireType(tag, NBTType.DOUBLE).getAsDouble()));
+        public <R> R readNumber(String key, Function<Number, R> function) {
+            return withTag(key, tag -> {
+                if (tag instanceof NBTNumber) {
+                    return function.apply(((NBTNumber) tag).getAsNumber());
+                } else {
+                    throw new IllegalArgumentException("Expected number but got " + tag.getType());
+                }
+            });
         }
 
         public void useUTF(String key, Consumer<String> consumer) {

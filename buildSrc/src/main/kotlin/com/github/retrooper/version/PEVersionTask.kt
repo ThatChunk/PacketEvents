@@ -41,10 +41,13 @@ abstract class PEVersionTask : DefaultTask() {
              */
             package $packageName;
             
+            import java.time.Instant;
+            
             public final class PEVersions {
             
                 public static final String RAW = "$version";
-                public static final PEVersion CURRENT = new PEVersion(${ver.major}, ${ver.minor}, ${ver.patch}, ${ver.snapShot});
+                public static final Instant BUILD_TIMESTAMP = Instant.ofEpochMilli(${System.currentTimeMillis()}L);
+                public static final PEVersion CURRENT = new PEVersion(${ver.major}, ${ver.minor}, ${ver.patch}, ${ver.quotedSnapshotCommit()});
                 public static final PEVersion UNKNOWN = new PEVersion(0, 0, 0);
                 
                 private PEVersions() {
@@ -58,10 +61,10 @@ abstract class PEVersionTask : DefaultTask() {
         val major: Int,
         val minor: Int,
         val patch: Int,
-        val snapShot: Boolean
+        val snapshotCommit: String?
     ) {
         companion object {
-            private val REGEX = Regex("""(\d+)\.(\d+)\.(\d+)(-SNAPSHOT)?""")
+            private val REGEX = Regex("""(\d+)\.(\d+)\.(\d+)(?:\+([0-9a-f]+)-SNAPSHOT)?""")
 
             fun fromString(version: String): Version {
                 val match = REGEX.matchEntire(version) ?: throw IllegalArgumentException("Invalid version: $version")
@@ -69,9 +72,16 @@ abstract class PEVersionTask : DefaultTask() {
                     match.groupValues[1].toInt(),
                     match.groupValues[2].toInt(),
                     match.groupValues[3].toInt(),
-                    match.groupValues[4].isNotEmpty()
+                    match.groupValues[4].ifEmpty { null }
                 )
             }
+        }
+
+        fun quotedSnapshotCommit(): String {
+            if (snapshotCommit == null) {
+                return "null"
+            }
+            return "\"$snapshotCommit\"";
         }
     }
 

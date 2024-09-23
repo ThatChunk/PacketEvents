@@ -39,7 +39,7 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
-*/
+ */
 package com.github.retrooper.packetevents.wrapper;
 
 import com.github.retrooper.packetevents.PacketEvents;
@@ -62,7 +62,6 @@ import com.github.retrooper.packetevents.protocol.chat.RemoteChatSession;
 import com.github.retrooper.packetevents.protocol.chat.SignedCommandArgument;
 import com.github.retrooper.packetevents.protocol.chat.filter.FilterMask;
 import com.github.retrooper.packetevents.protocol.chat.filter.FilterMaskType;
-import com.github.retrooper.packetevents.protocol.chat.message.ChatMessage_v1_19_1;
 import com.github.retrooper.packetevents.protocol.component.ComponentType;
 import com.github.retrooper.packetevents.protocol.component.ComponentTypes;
 import com.github.retrooper.packetevents.protocol.component.PatchableComponentMap;
@@ -77,6 +76,7 @@ import com.github.retrooper.packetevents.protocol.item.type.ItemTypes;
 import com.github.retrooper.packetevents.protocol.mapper.MappedEntity;
 import com.github.retrooper.packetevents.protocol.nbt.NBT;
 import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
+import com.github.retrooper.packetevents.protocol.nbt.NBTLimiter;
 import com.github.retrooper.packetevents.protocol.nbt.codec.NBTCodec;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon;
@@ -96,6 +96,9 @@ import com.github.retrooper.packetevents.util.adventure.AdventureSerializer;
 import com.github.retrooper.packetevents.util.crypto.MinecraftEncryptionUtil;
 import com.github.retrooper.packetevents.util.crypto.SaltSignature;
 import com.github.retrooper.packetevents.util.crypto.SignatureData;
+import com.github.retrooper.packetevents.util.mappings.GlobalRegistryHolder;
+import com.github.retrooper.packetevents.util.mappings.IRegistry;
+import com.github.retrooper.packetevents.util.mappings.IRegistryHolder;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.Style;
 import org.jetbrains.annotations.ApiStatus;
@@ -125,6 +128,9 @@ import java.util.function.IntFunction;
 public class PacketWrapper<T extends PacketWrapper<T>> {
     @Nullable
     public Object buffer;
+
+    @ApiStatus.Internal
+    public final Object bufferLock = new Object();
 
     protected ClientVersion clientVersion;
     protected ServerVersion serverVersion;
@@ -262,7 +268,7 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
     //TODO public void transform(int protocolVersion) {}
     //Current idea change server version, but still think more
 
-    public final void readEvent(ProtocolPacketEvent<?> event) {
+    public final void readEvent(ProtocolPacketEvent event) {
         PacketWrapper<?> last = event.getLastUsedWrapper();
         if (last != null) {
             copy((T) last);
@@ -609,6 +615,14 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
 
     public NBT readNBTRaw() {
         return NBTCodec.readNBTFromBuffer(buffer, serverVersion);
+    }
+
+    public NBTCompound readUnlimitedNBT() {
+        return (NBTCompound) this.readUnlimitedNBTRaw();
+    }
+
+    public NBT readUnlimitedNBTRaw() {
+        return NBTCodec.readNBTFromBuffer(buffer, serverVersion, NBTLimiter.noop());
     }
 
     public void writeNBT(NBTCompound nbt) {
@@ -1009,6 +1023,7 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
         writeEntityMetadata(metadata.entityData(serverVersion.toClientVersion()));
     }
 
+    @Deprecated
     public Dimension readDimension() {
         if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
             return new Dimension(this.readVarInt());
@@ -1023,6 +1038,7 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
         }
     }
 
+    @Deprecated
     public void writeDimension(Dimension dimension) {
         if (this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_20_5)) {
             this.writeVarInt(dimension.getId());
@@ -1166,7 +1182,7 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
     }
 
     public MessageSignature readMessageSignature() {
-        if(serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19_3)) return new MessageSignature(readBytes(256));
+        if (serverVersion.isNewerThanOrEquals(ServerVersion.V_1_19_3)) return new MessageSignature(readBytes(256));
         else return new MessageSignature(readByteArray());
     }
 
@@ -1296,8 +1312,8 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
 
     public ChatType.Bound readChatTypeBoundNetwork() {
         ChatType type = this.serverVersion.isNewerThanOrEquals(ServerVersion.V_1_21)
-                ? this.readMappedEntityOrDirect(ChatTypes::getById, ChatType::readDirect)
-                : this.readMappedEntity(ChatTypes::getById);
+                ? this.readMappedEntityOrDirect(ChatTypes.getRegistry(), ChatType::readDirect)
+                : this.readMappedEntity(ChatTypes.getRegistry());
         Component name = readComponent();
         Component targetName = readOptional(PacketWrapper::readComponent);
         return new ChatType.Bound(type, name, targetName);
@@ -1484,16 +1500,42 @@ public class PacketWrapper<T extends PacketWrapper<T>> {
     }
 
     public <Z extends MappedEntity> Z readMappedEntity(BiFunction<ClientVersion, Integer, Z> getter) {
-        return getter.apply(this.serverVersion.toClientVersion(), this.readVarInt());
+        int id = this.readVarInt();
+        Z entity = getter.apply(this.serverVersion.toClientVersion(), id);
+        if (entity == null) {
+            throw new IllegalStateException("Can't find mapped entity with id " + id + " using " + getter);
+        }
+        return entity;
+    }
+
+    public IRegistryHolder getRegistryHolder() {
+        // workaround to make packet wrappers work without user context on spigot/fabric servers
+        // this will not work for bungee or velocity, as we need to have some reference to get
+        // the actual cache key
+        return this.user != null ? this.user : GlobalRegistryHolder.INSTANCE;
     }
 
     public <Z extends MappedEntity> Z readMappedEntityOrDirect(
             BiFunction<ClientVersion, Integer, Z> getter, Reader<Z> directReader) {
         int id = this.readVarInt();
-        if (id != 0) { // registered in registry
-            return getter.apply(this.serverVersion.toClientVersion(), id - 1);
+        if (id == 0) { // not registered in registry
+            return directReader.apply(this);
         }
-        return directReader.apply(this);
+        Z entity = getter.apply(this.serverVersion.toClientVersion(), id - 1);
+        if (entity == null) {
+            throw new IllegalStateException("Can't find mapped entity with id " + id + " using " + getter);
+        }
+        return entity;
+    }
+
+    public <Z extends MappedEntity> Z readMappedEntity(IRegistry<Z> registry) {
+        IRegistry<Z> replacedRegistry = this.getRegistryHolder().getRegistryOr(registry);
+        return this.readMappedEntity((BiFunction<ClientVersion, Integer, Z>) replacedRegistry);
+    }
+
+    public <Z extends MappedEntity> Z readMappedEntityOrDirect(IRegistry<Z> registry, Reader<Z> directReader) {
+        IRegistry<Z> replacedRegistry = this.getRegistryHolder().getRegistryOr(registry);
+        return this.readMappedEntityOrDirect((BiFunction<ClientVersion, Integer, Z>) replacedRegistry, directReader);
     }
 
     public void writeMappedEntity(MappedEntity entity) {

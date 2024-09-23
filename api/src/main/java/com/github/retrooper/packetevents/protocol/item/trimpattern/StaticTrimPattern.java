@@ -19,13 +19,15 @@
 package com.github.retrooper.packetevents.protocol.item.trimpattern;
 
 import com.github.retrooper.packetevents.protocol.item.type.ItemType;
-import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.mapper.AbstractMappedEntity;
 import com.github.retrooper.packetevents.resources.ResourceLocation;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilderData;
 import net.kyori.adventure.text.Component;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
-public class StaticTrimPattern implements TrimPattern {
+public class StaticTrimPattern extends AbstractMappedEntity implements TrimPattern {
 
     private final ResourceLocation assetId;
     private final ItemType templateItem;
@@ -36,6 +38,15 @@ public class StaticTrimPattern implements TrimPattern {
             ResourceLocation assetId, ItemType templateItem,
             Component description, boolean decal
     ) {
+        this(null, assetId, templateItem, description, decal);
+    }
+
+    public StaticTrimPattern(
+            @Nullable TypesBuilderData data,
+            ResourceLocation assetId, ItemType templateItem,
+            Component description, boolean decal
+    ) {
+        super(data);
         this.assetId = assetId;
         this.templateItem = templateItem;
         this.description = description;
@@ -43,18 +54,9 @@ public class StaticTrimPattern implements TrimPattern {
     }
 
     @Override
-    public ResourceLocation getName() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public int getId(ClientVersion version) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean isRegistered() {
-        return false;
+    public TrimPattern copy(@Nullable TypesBuilderData newData) {
+        return new StaticTrimPattern(newData, this.assetId,
+                this.templateItem, this.description, this.decal);
     }
 
     @Override
@@ -77,19 +79,23 @@ public class StaticTrimPattern implements TrimPattern {
         return this.decal;
     }
 
-    @Override
-    public boolean equals(Object obj) {
+    public boolean deepEquals(Object obj) {
         if (this == obj) return true;
         if (!(obj instanceof StaticTrimPattern)) return false;
-        StaticTrimPattern pattern = (StaticTrimPattern) obj;
-        if (this.decal != pattern.decal) return false;
-        if (!this.assetId.equals(pattern.assetId)) return false;
-        if (!this.templateItem.equals(pattern.templateItem)) return false;
-        return this.description.equals(pattern.description);
+        if (!super.equals(obj)) return false;
+        StaticTrimPattern that = (StaticTrimPattern) obj;
+        if (this.decal != that.decal) return false;
+        if (!this.assetId.equals(that.assetId)) return false;
+        if (!this.templateItem.equals(that.templateItem)) return false;
+        return this.description.equals(that.description);
+    }
+
+    public int deepHashCode() {
+        return Objects.hash(super.hashCode(), this.assetId, this.templateItem, this.description, this.decal);
     }
 
     @Override
-    public int hashCode() {
-        return Objects.hash(this.assetId, this.templateItem, this.description, this.decal);
+    public String toString() {
+        return "StaticTrimPattern{assetId=" + this.assetId + ", templateItem=" + this.templateItem + ", description=" + this.description + ", decal=" + this.decal + '}';
     }
 }

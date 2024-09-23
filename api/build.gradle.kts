@@ -21,6 +21,7 @@ java {
 
 dependencies {
     compileOnlyApi(libs.bundles.adventure)
+    compileOnlyApi(libs.bundles.adventure.serializers)
     implementation(libs.adventure.api)
     api(project(":patch:adventure-text-serializer-gson", "shadow")) {
         excludeAdventure()
@@ -47,7 +48,11 @@ mappingCompression {
         compress("block/legacy_block_mappings.json")
         compress("block/modern_block_mappings.json")
 
+        compress("enchantment/enchantment_type_data.json")
+
         compress("stats/statistics.json")
+
+        compress("world/biome_data.json")
     }
 
     with<JsonArrayCompressionStrategy> {
@@ -60,13 +65,19 @@ mappingCompression {
 
         compress("command/argument_parser_mappings.json")
 
+        compress("damage/damagetype_mappings.json")
+
+        compress("enchantment/effect_component_type.json")
+
         compress("entity/entity_data_type_mappings.json")
         compress("entity/painting_mappings.json")
+        compress("entity/wolf_variant_mappings.json")
 
         compress("item/item_armor_material_mappings.json")
         compress("item/item_banner_pattern_mappings.json")
         compress("item/item_component_mappings.json")
         compress("item/item_instrument_mappings.json")
+        compress("item/item_jukebox_song_mappings.json")
         compress("item/item_map_decoration_type_mappings.json")
         compress("item/item_potion_mappings.json")
         compress("item/item_trim_material_mappings.json")
@@ -77,6 +88,7 @@ mappingCompression {
 
         compress("sound/sound_mappings.json")
 
+        compress("world/biome_mappings.json")
         compress("world/world_position_source_mappings.json")
     }
 
@@ -88,6 +100,8 @@ mappingCompression {
         compress("entity/legacy_entity_type_mappings.json")
 
         compress("item/item_type_mappings.json")
+
+        compress("world/dimension_type_mappings.json")
     }
 }
 
